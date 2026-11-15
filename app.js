@@ -68,7 +68,7 @@ function SvgIcon({ tipo }) {
   );
 }
 
-// --- UTILIDADES DE AJEDREZ ---
+// --- MOTOR DE REGLAS COMPLETAS DE AJEDREZ (JAQUE Y JAQUE MATE) ---
 const TABLERO_INICIAL = [
   ['r', 'n', 'b', 'q', 'k', 'b', 'n', 'r'],
   ['p', 'p', 'p', 'p', 'p', 'p', 'p', 'p'],
@@ -100,7 +100,22 @@ function esBlanca(pieza) {
   return pieza !== '' && pieza === pieza.toUpperCase();
 }
 
-function obtenerMovimientosSimples(tablero, r, c) {
+function clonarTablero(tablero) {
+  return tablero.map(row => [...row]);
+}
+
+function encontrarRey(tablero, turnoColor) {
+  const reyBuscado = turnoColor === 'white' ? 'K' : 'k';
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      if (tablero[r][c] === reyBuscado) return [r, c];
+    }
+  }
+  return null;
+}
+
+// Movimientos pseudo-legales (geometría de cada pieza sin verificar aún si deja al propio rey en jaque)
+function obtenerPseudoMovimientos(tablero, r, c) {
   const pieza = tablero[r][c];
   if (!pieza) return [];
   const blanca = esBlanca(pieza);
@@ -159,6 +174,63 @@ function obtenerMovimientosSimples(tablero, r, c) {
   return moves;
 }
 
+// Verifica si el rey del color indicado está amenazado (en JAQUE)
+function estaEnJaque(tablero, turnoColor) {
+  const posRey = encontrarRey(tablero, turnoColor);
+  if (!posRey) return true; // Si por alguna razón el rey fue capturado
+  const [kr, kc] = posRey;
+  const esTurnoBlanco = turnoColor === 'white';
+
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const p = tablero[r][c];
+      if (p !== '' && esBlanca(p) !== esTurnoBlanco) {
+        const ataques = obtenerPseudoMovimientos(tablero, r, c);
+        if (ataques.some(([ar, ac]) => ar === kr && ac === kc)) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+// Filtra los movimientos estrictamente legales (ningún movimiento puede dejar al propio rey en jaque)
+function obtenerMovimientosLegales(tablero, r, c) {
+  const pieza = tablero[r][c];
+  if (!pieza) return [];
+  const color = esBlanca(pieza) ? 'white' : 'black';
+  const pseudo = obtenerPseudoMovimientos(tablero, r, c);
+
+  return pseudo.filter(([nr, nc]) => {
+    const copia = clonarTablero(tablero);
+    copia[nr][nc] = pieza;
+    copia[r][c] = '';
+    // Promoción automática de peón a dama para simulación exacta
+    if (pieza === 'P' && nr === 0) copia[nr][nc] = 'Q';
+    if (pieza === 'p' && nr === 7) copia[nr][nc] = 'q';
+    return !estaEnJaque(copia, color);
+  });
+}
+
+// Devuelve todos los movimientos legales posibles para un bando
+function obtenerTodosLosLegales(tablero, turnoColor) {
+  const esTurnoBlanco = turnoColor === 'white';
+  const lista = [];
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const p = tablero[r][c];
+      if (p !== '' && esBlanca(p) === esTurnoBlanco) {
+        const legales = obtenerMovimientosLegales(tablero, r, c);
+        legales.forEach(([nr, nc]) => {
+          lista.push({ from: [r, c], to: [nr, nc], piece: p });
+        });
+      }
+    }
+  }
+  return lista;
+}
+
 // --- COMPONENTE BOTÓN CON FIJACIÓN DE MIRADA (DWELL-CLICK) ---
 function GazeElement({ id, className, onActivate, children, style }) {
   return (
@@ -180,7 +252,6 @@ function HomeMenu({ onSelectView, isSuperAdmin, onLoginSuccess, onLogout, themeM
   const [passInput, setPassInput] = useState('');
   const [loginError, setLoginError] = useState('');
 
-  // Credenciales Superadmin configurables (por defecto: admin / ocula2026)
   const handleLoginSubmit = (e) => {
     e.preventDefault();
     if (userInput.trim().toLowerCase() === 'admin' && passInput === 'ocula2026') {
@@ -195,7 +266,6 @@ function HomeMenu({ onSelectView, isSuperAdmin, onLoginSuccess, onLogout, themeM
 
   return (
     <div className="home-split-layout">
-      {/* Columna Izquierda: Elección de Actividad */}
       <div className="home-activities-panel">
         <p className="home-subtitle">
           Mantené la mirada (o hacé clic) sobre la actividad que querés iniciar
@@ -224,12 +294,11 @@ function HomeMenu({ onSelectView, isSuperAdmin, onLoginSuccess, onLogout, themeM
           >
             <div className="menu-icon">♟️</div>
             <h2>Aprender Ajedrez</h2>
-            <p>Tablero accesible controlado con la mirada para practicar movimientos y descargar partida en PDF.</p>
+            <p>Tablero accesible controlado con la mirada con alertas de Jaque, Jaque Mate y exportación PDF.</p>
           </GazeElement>
         </div>
       </div>
 
-      {/* Columna Derecha: Panel de Acceso Superadmin */}
       <aside className="admin-panel">
         <h3>🔐 Acceso Superadmin</h3>
         {!isSuperAdmin ? (
@@ -304,21 +373,46 @@ function StoryBoard() {
   );
 }
 
-// --- PANTALLA 3: AJEDREZ ASISTIVO + DESCARGA PDF ---
+// --- PANTALLA 3: AJEDREZ ASISTIVO CON DETECCIÓN DE JAQUE Y JAQUE MATE ---
 function ChessGame() {
-  const [board, setBoard] = useState(TABLERO_INICIAL.map(row => [...row]));
+  const [board, setBoard] = useState(() => clonarTablero(TABLERO_INICIAL));
   const [selected, setSelected] = useState(null);
   const [validMoves, setValidMoves] = useState([]);
   const [turn, setTurn] = useState('white');
   const [lastMoveText, setLastMoveText] = useState('Seleccioná una pieza blanca');
   const [moveHistory, setMoveHistory] = useState([]);
 
-  const registrarMovimiento = (color, piece, fromR, fromC, toR, toC, captured) => {
+  // Estados de Jaque, Jaque Mate y control de fin de partida
+  const [gameOver, setGameOver] = useState(false);
+  const [checkBanner, setCheckBanner] = useState(null); // Mensaje temporal de "¡JAQUE!"
+  const [checkmateBanner, setCheckmateBanner] = useState(null); // Cartel fijo de "¡JAQUE MATE!"
+  const [kingInCheckPos, setKingInCheckPos] = useState(null); // [r, c] para iluminar rey en rojo
+
+  // Referencia para cancelar timeouts pendientes de la IA si termina o reinicia la partida
+  const aiTimeoutRef = useRef(null);
+  const checkBannerTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current);
+      if (checkBannerTimeoutRef.current) clearTimeout(checkBannerTimeoutRef.current);
+    };
+  }, []);
+
+  const mostrarCartelJaque = (textoDetalle) => {
+    if (checkBannerTimeoutRef.current) clearTimeout(checkBannerTimeoutRef.current);
+    setCheckBanner(textoDetalle);
+    checkBannerTimeoutRef.current = setTimeout(() => {
+      setCheckBanner(null);
+    }, 2600);
+  };
+
+  const registrarMovimiento = (color, piece, fromR, fromC, toR, toC, captured, sufijoEspecial = '') => {
     const origen = `${COLUMNAS[fromC]}${8 - fromR}`;
     const destino = `${COLUMNAS[toC]}${8 - toR}`;
     const letraPieza = NOTACION_PIEZA[piece.toLowerCase()];
     const capturaSimbolo = captured ? 'x' : '-';
-    const notacion = `${letraPieza}${origen}${capturaSimbolo}${destino}`;
+    const notacion = `${letraPieza}${origen}${capturaSimbolo}${destino}${sufijoEspecial}`;
     const descripcion = `${NOMBRES_PIEZAS[piece]} (${origen} → ${destino})${captured ? ` captura ${NOMBRES_PIEZAS[captured]}` : ''}`;
 
     setMoveHistory(prev => [
@@ -333,42 +427,111 @@ function ChessGame() {
     ]);
   };
 
+  // Evalúa si el bando que recibe el turno quedó en JAQUE, JAQUE MATE o AHOGADO
+  const evaluarEstadoPostJugada = (tableroActual, colorQueRecibeTurno) => {
+    const enJaque = estaEnJaque(tableroActual, colorQueRecibeTurno);
+    const movimientosDisponibles = obtenerTodosLosLegales(tableroActual, colorQueRecibeTurno);
+
+    if (enJaque) {
+      const posRey = encontrarRey(tableroActual, colorQueRecibeTurno);
+      setKingInCheckPos(posRey);
+    } else {
+      setKingInCheckPos(null);
+    }
+
+    // 1. JAQUE MATE: Está en jaque y no tiene ningún movimiento legal para escapar
+    if (enJaque && movimientosDisponibles.length === 0) {
+      const ganador = colorQueRecibeTurno === 'white' ? 'Negras' : 'Blancas';
+      setGameOver(true);
+      setCheckBanner(null);
+      setCheckmateBanner({
+        titulo: '¡JAQUE MATE!',
+        subtitulo: `Partida finalizada — Ganan las ${ganador}`
+      });
+      setLastMoveText(`¡JAQUE MATE! Ganan las ${ganador}.`);
+      hablar(`Jaque mate. Ganan las ${ganador}`);
+      return { terminado: true, sufijo: '#' };
+    }
+
+    // 2. TABLAS POR AHOGADO: No está en jaque pero no tiene movimientos legales
+    if (!enJaque && movimientosDisponibles.length === 0) {
+      setGameOver(true);
+      setCheckBanner(null);
+      setCheckmateBanner({
+        titulo: '¡TABLAS POR AHOGADO!',
+        subtitulo: 'Partida finalizada — Empate técnico'
+      });
+      setLastMoveText('Tablas por ahogado.');
+      hablar('Tablas por ahogado. Partida finalizada.');
+      return { terminado: true, sufijo: '' };
+    }
+
+    // 3. JAQUE SIMPLE: Está en jaque pero tiene escapatoria
+    if (enJaque) {
+      const reyAmenazado = colorQueRecibeTurno === 'white' ? 'Rey Blanco' : 'Rey Negro';
+      mostrarCartelJaque(`Amenaza al ${reyAmenazado}`);
+      return { terminado: false, sufijo: '+' };
+    }
+
+    return { terminado: false, sufijo: '' };
+  };
+
   const handleSquareAction = (r, c) => {
+    // Bloquear cualquier interacción sobre el tablero si la partida terminó o es turno de la IA
+    if (gameOver || turn !== 'white') return;
+
     const piece = board[r][c];
     const isMoveValid = validMoves.some(([vr, vc]) => vr === r && vc === c);
 
+    // Ejecutar movimiento de piezas blancas
     if (selected && isMoveValid) {
       const [sr, sc] = selected;
-      const movingPiece = board[sr][sc];
+      let movingPiece = board[sr][sc];
       const capturedPiece = board[r][c];
-      const newBoard = board.map(row => [...row]);
+
+      const newBoard = clonarTablero(board);
+      // Promoción automática de peón blanco al llegar a fila 0
+      if (movingPiece === 'P' && r === 0) {
+        movingPiece = 'Q';
+      }
       newBoard[r][c] = movingPiece;
       newBoard[sr][sc] = '';
 
       const coordText = `${COLUMNAS[c]}${8 - r}`;
-      const msg = `${NOMBRES_PIEZAS[movingPiece]} a ${coordText}`;
+      const estado = evaluarEstadoPostJugada(newBoard, 'black');
 
-      registrarMovimiento('white', movingPiece, sr, sc, r, c, capturedPiece);
+      registrarMovimiento('white', board[sr][sc], sr, sc, r, c, capturedPiece, estado.sufijo);
       setBoard(newBoard);
       setSelected(null);
       setValidMoves([]);
+
+      // SI ES JAQUE MATE O FIN DE PARTIDA, DETENEMOS AQUÍ Y NO LLAMAMOS A LA IA
+      if (estado.terminado) {
+        return;
+      }
+
+      const msg = estado.sufijo === '+'
+        ? `¡Jaque! ${NOMBRES_PIEZAS[movingPiece]} a ${coordText}`
+        : `${NOMBRES_PIEZAS[movingPiece]} a ${coordText}`;
+
       setLastMoveText(msg);
       hablar(msg);
 
-      if (turn === 'white') {
-        setTurn('black');
-        setTimeout(() => {
-          hacerMovimientoIA(newBoard);
-        }, 1200);
-      }
+      setTurn('black');
+      aiTimeoutRef.current = setTimeout(() => {
+        hacerMovimientoIA(newBoard);
+      }, 1250);
       return;
     }
 
-    if (piece !== '' && ((turn === 'white' && esBlanca(piece)) || (turn === 'black' && !esBlanca(piece)))) {
+    // Seleccionar pieza blanca propia y calcular solo sus movimientos legales
+    if (piece !== '' && esBlanca(piece)) {
       setSelected([r, c]);
-      const moves = obtenerMovimientosSimples(board, r, c);
+      const moves = obtenerMovimientosLegales(board, r, c);
       setValidMoves(moves);
-      const msg = `${NOMBRES_PIEZAS[piece]} seleccionado`;
+      const msg = moves.length > 0
+        ? `${NOMBRES_PIEZAS[piece]} seleccionado`
+        : `${NOMBRES_PIEZAS[piece]} sin movimientos legales`;
       setLastMoveText(msg);
       hablar(msg);
     } else {
@@ -378,45 +541,65 @@ function ChessGame() {
   };
 
   const hacerMovimientoIA = (currentBoard) => {
-    const todosLosMovimientos = [];
-    for (let r = 0; r < 8; r++) {
-      for (let c = 0; c < 8; c++) {
-        const p = currentBoard[r][c];
-        if (p !== '' && !esBlanca(p)) {
-          const moves = obtenerMovimientosSimples(currentBoard, r, c);
-          moves.forEach(([nr, nc]) => {
-            todosLosMovimientos.push({ from: [r, c], to: [nr, nc], piece: p });
-          });
-        }
-      }
+    // Doble guardia: si la partida ya terminó, la IA no mueve bajo ningún concepto
+    if (gameOver) return;
+
+    const todosLosMovimientos = obtenerTodosLosLegales(currentBoard, 'black');
+
+    if (todosLosMovimientos.length === 0) {
+      evaluarEstadoPostJugada(currentBoard, 'black');
+      return;
     }
-    if (todosLosMovimientos.length > 0) {
-      const elegido = todosLosMovimientos[Math.floor(Math.random() * todosLosMovimientos.length)];
-      const [fr, fc] = elegido.from;
-      const [tr, tc] = elegido.to;
-      const capturedPiece = currentBoard[tr][tc];
 
-      const nextBoard = currentBoard.map(row => [...row]);
-      nextBoard[tr][tc] = elegido.piece;
-      nextBoard[fr][fc] = '';
+    // Priorizar capturas o jaques si existen para hacer la partida más didáctica
+    const capturas = todosLosMovimientos.filter(m => currentBoard[m.to[0]][m.to[1]] !== '');
+    const pool = capturas.length > 0 && Math.random() < 0.7 ? capturas : todosLosMovimientos;
+    const elegido = pool[Math.floor(Math.random() * pool.length)];
 
-      const coordText = `${COLUMNAS[tc]}${8 - tr}`;
-      const msg = `Negras mueven ${NOMBRES_PIEZAS[elegido.piece]} a ${coordText}`;
+    const [fr, fc] = elegido.from;
+    const [tr, tc] = elegido.to;
+    const capturedPiece = currentBoard[tr][tc];
+    let piezaFinal = elegido.piece;
 
-      registrarMovimiento('black', elegido.piece, fr, fc, tr, tc, capturedPiece);
-      setBoard(nextBoard);
-      setLastMoveText(msg);
-      hablar(msg);
+    const nextBoard = clonarTablero(currentBoard);
+    if (piezaFinal === 'p' && tr === 7) {
+      piezaFinal = 'q';
     }
+    nextBoard[tr][tc] = piezaFinal;
+    nextBoard[fr][fc] = '';
+
+    const coordText = `${COLUMNAS[tc]}${8 - tr}`;
+    const estado = evaluarEstadoPostJugada(nextBoard, 'white');
+
+    registrarMovimiento('black', elegido.piece, fr, fc, tr, tc, capturedPiece, estado.sufijo);
+    setBoard(nextBoard);
+
+    if (estado.terminado) {
+      return;
+    }
+
+    const msg = estado.sufijo === '+'
+      ? `¡Jaque! Negras mueven ${NOMBRES_PIEZAS[piezaFinal]} a ${coordText}`
+      : `Negras mueven ${NOMBRES_PIEZAS[piezaFinal]} a ${coordText}`;
+
+    setLastMoveText(msg);
+    hablar(msg);
     setTurn('white');
   };
 
   const reiniciarPartida = () => {
-    setBoard(TABLERO_INICIAL.map(row => [...row]));
+    if (aiTimeoutRef.current) clearTimeout(aiTimeoutRef.current);
+    if (checkBannerTimeoutRef.current) clearTimeout(checkBannerTimeoutRef.current);
+
+    setBoard(clonarTablero(TABLERO_INICIAL));
     setSelected(null);
     setValidMoves([]);
     setTurn('white');
     setMoveHistory([]);
+    setGameOver(false);
+    setCheckBanner(null);
+    setCheckmateBanner(null);
+    setKingInCheckPos(null);
     setLastMoveText('Tablero reiniciado. Turno blancas.');
     hablar('Tablero reiniciado');
   };
@@ -440,7 +623,6 @@ function ChessGame() {
       minute: '2-digit'
     });
 
-    // Encabezado del PDF
     doc.setFontSize(18);
     doc.setTextColor(15, 23, 42);
     doc.text('OCULA — Registro de Partida de Ajedrez', 14, 22);
@@ -449,18 +631,20 @@ function ChessGame() {
     doc.setTextColor(71, 85, 105);
     doc.text(`Fecha de emisión: ${fechaStr} — Hora: ${horaStr}`, 14, 30);
     doc.text(`Total de jugadas registradas: ${moveHistory.length}`, 14, 36);
+    if (checkmateBanner) {
+      doc.text(`Resultado: ${checkmateBanner.titulo} (${checkmateBanner.subtitulo})`, 14, 42);
+    }
 
     doc.setDrawColor(148, 163, 184);
-    doc.line(14, 41, 196, 41);
+    doc.line(14, 47, 196, 47);
 
-    let y = 50;
+    let y = 56;
     doc.setFontSize(11);
     doc.setTextColor(15, 23, 42);
 
     if (moveHistory.length === 0) {
       doc.text('No se realizaron movimientos en esta partida.', 14, y);
     } else {
-      // Encabezados de tabla
       doc.setFont(undefined, 'bold');
       doc.text('N°', 14, y);
       doc.text('Bando', 28, y);
@@ -491,41 +675,71 @@ function ChessGame() {
 
   return (
     <div className="chess-workspace">
-      <div className="chess-board">
-        {board.map((row, r) =>
-          row.map((piece, c) => {
-            const isLight = (r + c) % 2 === 0;
-            const isSel = selected && selected[0] === r && selected[1] === c;
-            const isVal = validMoves.some(([vr, vc]) => vr === r && vc === c);
+      <div className="chess-board-wrapper">
+        <div className="chess-board">
+          {board.map((row, r) =>
+            row.map((piece, c) => {
+              const isLight = (r + c) % 2 === 0;
+              const isSel = selected && selected[0] === r && selected[1] === c;
+              const isVal = validMoves.some(([vr, vc]) => vr === r && vc === c);
+              const isKingDanger = kingInCheckPos && kingInCheckPos[0] === r && kingInCheckPos[1] === c;
 
-            return (
-              <GazeElement
-                key={`${r}-${c}`}
-                id={`sq-${r}-${c}`}
-                className={`chess-square ${isLight ? 'square-light' : 'square-dark'} ${isSel ? 'square-selected' : ''} ${isVal ? 'square-valid' : ''}`}
-                onActivate={() => handleSquareAction(r, c)}
-              >
-                {piece && (
-                  <span className={esBlanca(piece) ? 'piece-white' : 'piece-black'}>
-                    {SIMBOLOS_PIEZAS[piece]}
-                  </span>
-                )}
-              </GazeElement>
-            );
-          })
+              return (
+                <GazeElement
+                  key={`${r}-${c}`}
+                  id={`sq-${r}-${c}`}
+                  className={`chess-square ${isLight ? 'square-light' : 'square-dark'} ${isSel ? 'square-selected' : ''} ${isVal ? 'square-valid' : ''} ${isKingDanger ? 'square-king-check' : ''}`}
+                  onActivate={() => handleSquareAction(r, c)}
+                >
+                  {piece && (
+                    <span className={esBlanca(piece) ? 'piece-white' : 'piece-black'}>
+                      {SIMBOLOS_PIEZAS[piece]}
+                    </span>
+                  )}
+                </GazeElement>
+              );
+            })
+          )}
+        </div>
+
+        {/* Cartel temporal de JAQUE */}
+        {checkBanner && !checkmateBanner && (
+          <div className="chess-banner-overlay banner-check">
+            <h2 className="banner-title">⚠️ ¡JAQUE!</h2>
+            <p className="banner-subtitle">{checkBanner}</p>
+          </div>
+        )}
+
+        {/* Cartel definitivo de JAQUE MATE (detiene el juego hasta reiniciar) */}
+        {checkmateBanner && (
+          <div className="chess-banner-overlay banner-checkmate">
+            <h2 className="banner-title">👑 {checkmateBanner.titulo}</h2>
+            <p className="banner-subtitle">{checkmateBanner.subtitulo}</p>
+            <GazeElement
+              id="btn-nueva-partida-banner"
+              className="chess-action-btn"
+              style={{ marginTop: '8px', minWidth: '220px' }}
+              onActivate={reiniciarPartida}
+            >
+              🔄 Jugar Nueva Partida
+            </GazeElement>
+          </div>
         )}
       </div>
 
       <div className="chess-sidebar">
         <h3>Ajedrez Asistivo</h3>
-        <div className="turn-indicator">
-          {turn === 'white' ? '⚪ Tu turno (Blancas)' : '⚫ Pensando negras...'}
+        <div className={`turn-indicator ${gameOver ? 'game-over' : ''}`}>
+          {gameOver
+            ? '🏁 Partida Finalizada'
+            : turn === 'white'
+              ? '⚪ Tu turno (Blancas)'
+              : '⚫ Pensando negras...'}
         </div>
         <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-sub)', minHeight: '36px' }}>
           {lastMoveText}
         </p>
 
-        {/* Historial visible en pantalla */}
         <div className="moves-log-box">
           <strong>Planilla de movimientos ({moveHistory.length}):</strong>
           {moveHistory.length === 0 ? (
@@ -563,11 +777,10 @@ function ChessGame() {
 
 // --- APLICACIÓN PRINCIPAL CON RASTREO MEDIAPIPE GLOBAL ---
 function App() {
-  const [vista, setVista] = useState('inicio'); // 'inicio' | 'cuento' | 'ajedrez'
+  const [vista, setVista] = useState('inicio');
   const [statusText, setStatusText] = useState('Iniciando cámara...');
   const [trackingActive, setTrackingActive] = useState(false);
 
-  // Estado Superadmin y Tema DOM ('dark' | 'light')
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [themeMode, setThemeMode] = useState('dark');
 
@@ -583,7 +796,6 @@ function App() {
   const SENSIBILIDAD_Y = 4.8;
   const SUAVIZADO = 0.22;
 
-  // Aplicar cambio del DOM cuando el Superadmin cambia el tema
   useEffect(() => {
     if (themeMode === 'light') {
       document.body.classList.add('light-mode');
