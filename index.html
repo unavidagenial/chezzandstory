@@ -312,6 +312,14 @@
       justify-content: center;
       gap: 24px;
       padding: 14px;
+      position: relative;
+    }
+
+    .chess-board-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     .chess-board {
@@ -338,6 +346,7 @@
     .square-dark { background-color: #475569; color: #0f172a; }
     .square-selected { background-color: #fde047 !important; border-color: #ca8a04 !important; }
     .square-valid { box-shadow: inset 0 0 0 5px #22c55e; }
+    .square-king-check { background-color: #ef4444 !important; box-shadow: inset 0 0 15px #7f1d1d; }
 
     .piece-white {
       color: #ffffff;
@@ -346,6 +355,58 @@
     .piece-black {
       color: #090d16;
       text-shadow: 0 1px 2px rgba(255,255,255,0.4);
+    }
+
+    /* Carteles flotantes de JAQUE y JAQUE MATE */
+    .chess-banner-overlay {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 500;
+      padding: 24px 36px;
+      border-radius: 20px;
+      text-align: center;
+      box-shadow: 0 15px 40px rgba(0, 0, 0, 0.75);
+      animation: popBanner 0.3s ease-out;
+      min-width: 300px;
+    }
+
+    @keyframes popBanner {
+      0% { transform: translate(-50%, -50%) scale(0.75); opacity: 0; }
+      100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+    }
+
+    .banner-check {
+      background: rgba(217, 119, 6, 0.96);
+      border: 4px solid #fef08a;
+      color: #ffffff;
+      pointer-events: none;
+    }
+
+    .banner-checkmate {
+      background: rgba(15, 23, 42, 0.96);
+      border: 5px solid #ef4444;
+      color: #ffffff;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      align-items: center;
+    }
+
+    .banner-title {
+      margin: 0;
+      font-size: 2.2rem;
+      font-weight: 900;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+    }
+
+    .banner-subtitle {
+      margin: 4px 0 0 0;
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #fef08a;
     }
 
     .chess-sidebar {
@@ -374,6 +435,12 @@
       text-align: center;
       font-size: 0.98rem;
       border: 1px solid var(--border-color);
+    }
+
+    .turn-indicator.game-over {
+      background: #7f1d1d;
+      color: #fecaca;
+      border-color: #ef4444;
     }
 
     .moves-log-box {
