@@ -5,18 +5,445 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>OCULA — Plataforma Asistiva (Cuento y Ajedrez)</title>
 
-  <!-- React 18 & ReactDOM (UMD para funcionar directo en GitHub Pages / Netlify sin Node/Webpack) -->
+  <!-- React 18 & Babel -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <!-- Babel Standalone para compilar JSX en el navegador -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- jsPDF para generar y descargar el PDF con los movimientos de ajedrez -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <!-- MediaPipe Face Mesh & Camera Utils -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
 
-  <!-- Estilos globales -->
-  <link rel="stylesheet" href="styles.css" />
+  <style>
+    :root {
+      --bg-body: #0f172a;
+      --bg-header: #1e293b;
+      --bg-card: #1e293b;
+      --bg-card-grad: linear-gradient(145deg, #1e293b, #0f172a);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-sub: #cbd5e1;
+      --accent: #38bdf8;
+      --accent-dark: #0284c7;
+      --border-color: #475569;
+      --input-bg: #0f172a;
+    }
+
+    body.light-mode {
+      --bg-body: #f1f5f9;
+      --bg-header: #ffffff;
+      --bg-card: #ffffff;
+      --bg-card-grad: linear-gradient(145deg, #ffffff, #e2e8f0);
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --text-sub: #334155;
+      --accent: #0284c7;
+      --accent-dark: #0369a1;
+      --border-color: #94a3b8;
+      --input-bg: #f8fafc;
+    }
+
+    * {
+      box-sizing: border-box;
+      user-select: none;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-body);
+      color: var(--text-main);
+      overflow: hidden;
+      height: 100vh;
+      transition: background-color 0.25s ease, color 0.25s ease;
+    }
+
+    #root {
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header superior */
+    .app-header {
+      padding: 10px 20px;
+      background: var(--bg-header);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+      z-index: 100;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .app-title {
+      margin: 0;
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .status-badge {
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      background: #334155;
+      color: #e2e8f0;
+    }
+
+    .status-badge.active {
+      background: #065f46;
+      color: #6ee7b7;
+    }
+
+    /* Botones gaze-clickable generales */
+    .gaze-btn {
+      position: relative;
+      overflow: hidden;
+      cursor: pointer;
+      transition: transform 0.15s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .gaze-btn.hovered {
+      border-color: var(--accent) !important;
+      transform: scale(1.02);
+      box-shadow: 0 0 18px rgba(56, 189, 248, 0.45);
+    }
+
+    .dwell-bar {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      height: 8px;
+      background: var(--accent-dark);
+      transition: width 0.04s linear;
+      z-index: 10;
+    }
+
+    .btn-home {
+      background: var(--bg-card);
+      color: var(--text-main);
+      border: 3px solid var(--border-color);
+      border-radius: 12px;
+      padding: 8px 18px;
+      font-size: 0.95rem;
+      font-weight: 700;
+    }
+
+    /* Pantalla Principal dividida: Selección + Panel Superadmin */
+    .home-split-layout {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 2.3fr 1fr;
+      gap: 24px;
+      padding: 24px;
+      align-items: center;
+      overflow-y: auto;
+    }
+
+    .home-activities-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      height: 100%;
+      justify-content: center;
+    }
+
+    .home-subtitle {
+      font-size: 1.15rem;
+      color: var(--text-sub);
+      margin: 0;
+    }
+
+    .menu-cards {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 22px;
+      height: 58vh;
+    }
+
+    .menu-card {
+      background: var(--bg-card-grad);
+      border: 5px solid var(--border-color);
+      border-radius: 22px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      text-align: center;
+      color: var(--text-main);
+    }
+
+    .menu-icon {
+      font-size: 4.5rem;
+      margin-bottom: 14px;
+    }
+
+    .menu-card h2 {
+      margin: 0 0 10px 0;
+      font-size: 1.65rem;
+      color: var(--accent);
+    }
+
+    .menu-card p {
+      margin: 0;
+      font-size: 1rem;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    /* Panel Superadmin en pantalla principal */
+    .admin-panel {
+      background: var(--bg-card);
+      border: 3px solid var(--border-color);
+      border-radius: 20px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    }
+
+    .admin-panel h3 {
+      margin: 0;
+      font-size: 1.25rem;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .admin-form {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .admin-input {
+      width: 100%;
+      padding: 11px 14px;
+      border-radius: 10px;
+      border: 2px solid var(--border-color);
+      background: var(--input-bg);
+      color: var(--text-main);
+      font-size: 0.95rem;
+      user-select: text;
+    }
+
+    .admin-btn {
+      padding: 12px 16px;
+      border-radius: 10px;
+      border: 2px solid var(--accent);
+      background: var(--accent-dark);
+      color: #ffffff;
+      font-weight: 700;
+      font-size: 0.95rem;
+      cursor: pointer;
+      text-align: center;
+    }
+
+    .admin-btn.secondary {
+      background: transparent;
+      color: var(--text-main);
+      border-color: var(--border-color);
+    }
+
+    .admin-error {
+      color: #ef4444;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin: 0;
+    }
+
+    /* Vista 1: Tablero Caperucita Roja */
+    .story-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      grid-template-rows: repeat(3, 1fr);
+      gap: 12px;
+      padding: 12px;
+    }
+
+    .story-card {
+      background: #ffffff;
+      color: #0f172a;
+      border-radius: 16px;
+      border: 4px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 8px;
+    }
+
+    .story-card img, .story-card svg {
+      max-height: 55%;
+      max-width: 65%;
+      object-fit: contain;
+      margin-bottom: 6px;
+    }
+
+    .story-label {
+      font-size: 0.95rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      text-align: center;
+      color: #1e293b;
+    }
+
+    /* Vista 2: Ajedrez Asistivo */
+    .chess-workspace {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      padding: 14px;
+    }
+
+    .chess-board {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      grid-template-rows: repeat(8, 1fr);
+      width: min(76vh, 600px);
+      height: min(76vh, 600px);
+      border: 6px solid var(--border-color);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    }
+
+    .chess-square {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: clamp(1.8rem, 4.2vh, 2.8rem);
+      border: 2px solid transparent;
+    }
+
+    .square-light { background-color: #e2e8f0; color: #0f172a; }
+    .square-dark { background-color: #475569; color: #0f172a; }
+    .square-selected { background-color: #fde047 !important; border-color: #ca8a04 !important; }
+    .square-valid { box-shadow: inset 0 0 0 5px #22c55e; }
+
+    .piece-white {
+      color: #ffffff;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.85), 0 0 2px #000;
+    }
+    .piece-black {
+      color: #090d16;
+      text-shadow: 0 1px 2px rgba(255,255,255,0.4);
+    }
+
+    .chess-sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      width: 310px;
+      max-height: 82vh;
+      background: var(--bg-card);
+      padding: 18px;
+      border-radius: 16px;
+      border: 2px solid var(--border-color);
+    }
+
+    .chess-sidebar h3 {
+      margin: 0;
+      color: var(--accent);
+      font-size: 1.15rem;
+    }
+
+    .turn-indicator {
+      padding: 10px;
+      border-radius: 10px;
+      background: var(--input-bg);
+      font-weight: 700;
+      text-align: center;
+      font-size: 0.98rem;
+      border: 1px solid var(--border-color);
+    }
+
+    .moves-log-box {
+      flex: 1;
+      min-height: 110px;
+      max-height: 200px;
+      overflow-y: auto;
+      background: var(--input-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 10px;
+      font-size: 0.85rem;
+      color: var(--text-sub);
+    }
+
+    .moves-log-item {
+      padding: 4px 0;
+      border-bottom: 1px dashed var(--border-color);
+    }
+
+    .chess-action-btn {
+      background: var(--accent-dark);
+      color: #ffffff;
+      border: 3px solid var(--accent);
+      border-radius: 12px;
+      padding: 12px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      text-align: center;
+    }
+
+    .chess-pdf-btn {
+      background: #059669;
+      color: #ffffff;
+      border: 3px solid #34d399;
+      border-radius: 12px;
+      padding: 12px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      text-align: center;
+    }
+
+    /* Cursor ocular y miniatura cámara */
+    #gaze-cursor {
+      position: fixed;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      background: rgba(239, 68, 68, 0.85);
+      border: 3px solid #ffffff;
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      z-index: 9999;
+      box-shadow: 0 0 14px rgba(239, 68, 68, 0.95);
+    }
+
+    #camera-preview {
+      position: fixed;
+      bottom: 12px;
+      right: 12px;
+      width: 125px;
+      height: 90px;
+      border-radius: 10px;
+      border: 2px solid var(--accent);
+      object-fit: cover;
+      transform: scaleX(-1);
+      z-index: 1000;
+      background: #000;
+    }
+  </style>
 </head>
 <body>
   <div id="root"></div>
