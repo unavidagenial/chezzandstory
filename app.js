@@ -1,4 +1,4 @@
-const { useState, useEffect, useRef, useCallback } = React;
+const { useState, useEffect, useRef } = React;
 
 // --- SÍNTESIS DE VOZ EN ESPAÑOL ---
 function hablar(texto) {
@@ -90,6 +90,10 @@ const NOMBRES_PIEZAS = {
   'k': 'Rey negro', 'q': 'Dama negra', 'r': 'Torre negra', 'b': 'Alfil negro', 'n': 'Caballo negro', 'p': 'Peón negro'
 };
 
+const NOTACION_PIEZA = {
+  'k': 'R', 'q': 'D', 'r': 'T', 'b': 'A', 'n': 'C', 'p': ''
+};
+
 const COLUMNAS = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
 
 function esBlanca(pieza) {
@@ -170,40 +174,109 @@ function GazeElement({ id, className, onActivate, children, style }) {
   );
 }
 
-// --- PANTALLA 1: MENÚ PRINCIPAL ---
-function HomeMenu({ onSelectView }) {
-  return (
-    <div className="home-container">
-      <p className="home-subtitle">
-        Mantené la mirada (o hacé clic) sobre la actividad que querés iniciar
-      </p>
-      <div className="menu-cards">
-        <GazeElement
-          id="menu-cuento"
-          className="menu-card"
-          onActivate={() => {
-            hablar('Abriendo cuento La Caperucita Roja');
-            onSelectView('cuento');
-          }}
-        >
-          <div className="menu-icon">📖</div>
-          <h2>Cuento: Caperucita Roja</h2>
-          <p>Tablero interactivo de comunicación aumentativa con personajes, emociones y voz.</p>
-        </GazeElement>
+// --- PANTALLA 1: MENÚ PRINCIPAL + ACCESO SUPERADMIN ---
+function HomeMenu({ onSelectView, isSuperAdmin, onLoginSuccess, onLogout, themeMode, onToggleTheme }) {
+  const [userInput, setUserInput] = useState('');
+  const [passInput, setPassInput] = useState('');
+  const [loginError, setLoginError] = useState('');
 
-        <GazeElement
-          id="menu-ajedrez"
-          className="menu-card"
-          onActivate={() => {
-            hablar('Abriendo tablero de ajedrez asistivo');
-            onSelectView('ajedrez');
-          }}
-        >
-          <div className="menu-icon">♟️</div>
-          <h2>Aprender Ajedrez</h2>
-          <p>Tablero accesible controlado con la mirada para practicar movimientos y piezas.</p>
-        </GazeElement>
+  // Credenciales Superadmin configurables (por defecto: admin / ocula2026)
+  const handleLoginSubmit = (e) => {
+    e.preventDefault();
+    if (userInput.trim().toLowerCase() === 'admin' && passInput === 'ocula2026') {
+      setLoginError('');
+      setUserInput('');
+      setPassInput('');
+      onLoginSuccess();
+    } else {
+      setLoginError('Usuario o contraseña incorrectos');
+    }
+  };
+
+  return (
+    <div className="home-split-layout">
+      {/* Columna Izquierda: Elección de Actividad */}
+      <div className="home-activities-panel">
+        <p className="home-subtitle">
+          Mantené la mirada (o hacé clic) sobre la actividad que querés iniciar
+        </p>
+        <div className="menu-cards">
+          <GazeElement
+            id="menu-cuento"
+            className="menu-card"
+            onActivate={() => {
+              hablar('Abriendo cuento La Caperucita Roja');
+              onSelectView('cuento');
+            }}
+          >
+            <div className="menu-icon">📖</div>
+            <h2>Cuento: Caperucita Roja</h2>
+            <p>Tablero interactivo de comunicación aumentativa con personajes, emociones y voz.</p>
+          </GazeElement>
+
+          <GazeElement
+            id="menu-ajedrez"
+            className="menu-card"
+            onActivate={() => {
+              hablar('Abriendo tablero de ajedrez asistivo');
+              onSelectView('ajedrez');
+            }}
+          >
+            <div className="menu-icon">♟️</div>
+            <h2>Aprender Ajedrez</h2>
+            <p>Tablero accesible controlado con la mirada para practicar movimientos y descargar partida en PDF.</p>
+          </GazeElement>
+        </div>
       </div>
+
+      {/* Columna Derecha: Panel de Acceso Superadmin */}
+      <aside className="admin-panel">
+        <h3>🔐 Acceso Superadmin</h3>
+        {!isSuperAdmin ? (
+          <form className="admin-form" onSubmit={handleLoginSubmit}>
+            <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+              Iniciá sesión como administrador para habilitar la personalización visual del DOM (Modo Claro / Oscuro).
+            </p>
+            <input
+              type="text"
+              className="admin-input"
+              placeholder="Usuario (admin)"
+              value={userInput}
+              onChange={(e) => setUserInput(e.target.value)}
+            />
+            <input
+              type="password"
+              className="admin-input"
+              placeholder="Contraseña (ocula2026)"
+              value={passInput}
+              onChange={(e) => setPassInput(e.target.value)}
+            />
+            {loginError && <p className="admin-error">{loginError}</p>}
+            <button type="submit" className="admin-btn">
+              Ingresar como Superadmin
+            </button>
+          </form>
+        ) : (
+          <div className="admin-form">
+            <div style={{ padding: '10px', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.15)', border: '1px solid #10b981', fontSize: '0.9rem' }}>
+              ✅ Sesión activa: <strong>Superadmin</strong>
+            </div>
+            <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-muted)' }}>
+              Control de apariencia global del DOM:
+            </p>
+            <GazeElement
+              id="btn-toggle-theme"
+              className="admin-btn"
+              onActivate={onToggleTheme}
+            >
+              {themeMode === 'dark' ? '☀️ Cambiar DOM a Modo Claro' : '🌙 Cambiar DOM a Modo Oscuro'}
+            </GazeElement>
+            <button type="button" className="admin-btn secondary" onClick={onLogout}>
+              Cerrar sesión Superadmin
+            </button>
+          </div>
+        )}
+      </aside>
     </div>
   );
 }
@@ -231,35 +304,57 @@ function StoryBoard() {
   );
 }
 
-// --- PANTALLA 3: AJEDREZ ASISTIVO ---
+// --- PANTALLA 3: AJEDREZ ASISTIVO + DESCARGA PDF ---
 function ChessGame() {
   const [board, setBoard] = useState(TABLERO_INICIAL.map(row => [...row]));
   const [selected, setSelected] = useState(null);
   const [validMoves, setValidMoves] = useState([]);
   const [turn, setTurn] = useState('white');
   const [lastMoveText, setLastMoveText] = useState('Seleccioná una pieza blanca');
+  const [moveHistory, setMoveHistory] = useState([]);
+
+  const registrarMovimiento = (color, piece, fromR, fromC, toR, toC, captured) => {
+    const origen = `${COLUMNAS[fromC]}${8 - fromR}`;
+    const destino = `${COLUMNAS[toC]}${8 - toR}`;
+    const letraPieza = NOTACION_PIEZA[piece.toLowerCase()];
+    const capturaSimbolo = captured ? 'x' : '-';
+    const notacion = `${letraPieza}${origen}${capturaSimbolo}${destino}`;
+    const descripcion = `${NOMBRES_PIEZAS[piece]} (${origen} → ${destino})${captured ? ` captura ${NOMBRES_PIEZAS[captured]}` : ''}`;
+
+    setMoveHistory(prev => [
+      ...prev,
+      {
+        numero: prev.length + 1,
+        bando: color === 'white' ? 'Blancas' : 'Negras',
+        notacion,
+        descripcion,
+        hora: new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      }
+    ]);
+  };
 
   const handleSquareAction = (r, c) => {
     const piece = board[r][c];
     const isMoveValid = validMoves.some(([vr, vc]) => vr === r && vc === c);
 
-    // Si hay una pieza seleccionada y la casilla destino es válida
     if (selected && isMoveValid) {
       const [sr, sc] = selected;
       const movingPiece = board[sr][sc];
+      const capturedPiece = board[r][c];
       const newBoard = board.map(row => [...row]);
       newBoard[r][c] = movingPiece;
       newBoard[sr][sc] = '';
 
       const coordText = `${COLUMNAS[c]}${8 - r}`;
       const msg = `${NOMBRES_PIEZAS[movingPiece]} a ${coordText}`;
+
+      registrarMovimiento('white', movingPiece, sr, sc, r, c, capturedPiece);
       setBoard(newBoard);
       setSelected(null);
       setValidMoves([]);
       setLastMoveText(msg);
       hablar(msg);
 
-      // Cambio de turno o respuesta automática simple de negras tras 1.2s
       if (turn === 'white') {
         setTurn('black');
         setTimeout(() => {
@@ -269,7 +364,6 @@ function ChessGame() {
       return;
     }
 
-    // Seleccionar pieza propia
     if (piece !== '' && ((turn === 'white' && esBlanca(piece)) || (turn === 'black' && !esBlanca(piece)))) {
       setSelected([r, c]);
       const moves = obtenerMovimientosSimples(board, r, c);
@@ -298,11 +392,18 @@ function ChessGame() {
     }
     if (todosLosMovimientos.length > 0) {
       const elegido = todosLosMovimientos[Math.floor(Math.random() * todosLosMovimientos.length)];
+      const [fr, fc] = elegido.from;
+      const [tr, tc] = elegido.to;
+      const capturedPiece = currentBoard[tr][tc];
+
       const nextBoard = currentBoard.map(row => [...row]);
-      nextBoard[elegido.to[0]][elegido.to[1]] = elegido.piece;
-      nextBoard[elegido.from[0]][elegido.from[1]] = '';
-      const coordText = `${COLUMNAS[elegido.to[1]]}${8 - elegido.to[0]}`;
+      nextBoard[tr][tc] = elegido.piece;
+      nextBoard[fr][fc] = '';
+
+      const coordText = `${COLUMNAS[tc]}${8 - tr}`;
       const msg = `Negras mueven ${NOMBRES_PIEZAS[elegido.piece]} a ${coordText}`;
+
+      registrarMovimiento('black', elegido.piece, fr, fc, tr, tc, capturedPiece);
       setBoard(nextBoard);
       setLastMoveText(msg);
       hablar(msg);
@@ -315,8 +416,77 @@ function ChessGame() {
     setSelected(null);
     setValidMoves([]);
     setTurn('white');
+    setMoveHistory([]);
     setLastMoveText('Tablero reiniciado. Turno blancas.');
     hablar('Tablero reiniciado');
+  };
+
+  const descargarPDF = () => {
+    if (!window.jspdf) {
+      alert('La librería PDF aún está cargando. Intentá nuevamente en un segundo.');
+      return;
+    }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+
+    const ahora = new Date();
+    const fechaStr = ahora.toLocaleDateString('es-AR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    const horaStr = ahora.toLocaleTimeString('es-AR', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    // Encabezado del PDF
+    doc.setFontSize(18);
+    doc.setTextColor(15, 23, 42);
+    doc.text('OCULA — Registro de Partida de Ajedrez', 14, 22);
+
+    doc.setFontSize(11);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Fecha de emisión: ${fechaStr} — Hora: ${horaStr}`, 14, 30);
+    doc.text(`Total de jugadas registradas: ${moveHistory.length}`, 14, 36);
+
+    doc.setDrawColor(148, 163, 184);
+    doc.line(14, 41, 196, 41);
+
+    let y = 50;
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+
+    if (moveHistory.length === 0) {
+      doc.text('No se realizaron movimientos en esta partida.', 14, y);
+    } else {
+      // Encabezados de tabla
+      doc.setFont(undefined, 'bold');
+      doc.text('N°', 14, y);
+      doc.text('Bando', 28, y);
+      doc.text('Notación', 55, y);
+      doc.text('Detalle del Movimiento', 85, y);
+      doc.text('Hora', 175, y);
+      doc.setFont(undefined, 'normal');
+      y += 8;
+
+      moveHistory.forEach((mov) => {
+        if (y > 278) {
+          doc.addPage();
+          y = 20;
+        }
+        doc.text(`${mov.numero}.`, 14, y);
+        doc.text(mov.bando, 28, y);
+        doc.text(mov.notacion, 55, y);
+        doc.text(mov.descripcion, 85, y);
+        doc.text(mov.hora, 175, y);
+        y += 7;
+      });
+    }
+
+    const nombreArchivo = `partida-ajedrez-ocula-${fechaStr.replace(/\//g, '-')}.pdf`;
+    doc.save(nombreArchivo);
+    hablar('Descargando registro de partida en PDF');
   };
 
   return (
@@ -351,9 +521,34 @@ function ChessGame() {
         <div className="turn-indicator">
           {turn === 'white' ? '⚪ Tu turno (Blancas)' : '⚫ Pensando negras...'}
         </div>
-        <p style={{ margin: 0, fontSize: '0.95rem', color: '#cbd5e1', minHeight: '44px' }}>
+        <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-sub)', minHeight: '36px' }}>
           {lastMoveText}
         </p>
+
+        {/* Historial visible en pantalla */}
+        <div className="moves-log-box">
+          <strong>Planilla de movimientos ({moveHistory.length}):</strong>
+          {moveHistory.length === 0 ? (
+            <p style={{ margin: '6px 0 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+              Aún no hay jugadas registradas.
+            </p>
+          ) : (
+            moveHistory.map((m) => (
+              <div key={m.numero} className="moves-log-item">
+                <strong>#{m.numero}</strong> [{m.bando}] {m.notacion} — {m.descripcion}
+              </div>
+            ))
+          )}
+        </div>
+
+        <GazeElement
+          id="btn-descargar-pdf"
+          className="chess-pdf-btn"
+          onActivate={descargarPDF}
+        >
+          📄 Descargar Partida (PDF)
+        </GazeElement>
+
         <GazeElement
           id="btn-reiniciar-ajedrez"
           className="chess-action-btn"
@@ -372,18 +567,38 @@ function App() {
   const [statusText, setStatusText] = useState('Iniciando cámara...');
   const [trackingActive, setTrackingActive] = useState(false);
 
+  // Estado Superadmin y Tema DOM ('dark' | 'light')
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [themeMode, setThemeMode] = useState('dark');
+
   const videoRef = useRef(null);
   const cursorRef = useRef(null);
 
-  // Refs para el motor de dwell-click sin re-renders costosos a 60fps
   const hoveredElRef = useRef(null);
   const dwellStartRef = useRef(null);
   const animFrameRef = useRef(null);
 
-  const DWELL_TIME = 1250; // 1.25 segundos fijando la vista para activar
+  const DWELL_TIME = 1250;
   const SENSIBILIDAD_X = 5.2;
   const SENSIBILIDAD_Y = 4.8;
   const SUAVIZADO = 0.22;
+
+  // Aplicar cambio del DOM cuando el Superadmin cambia el tema
+  useEffect(() => {
+    if (themeMode === 'light') {
+      document.body.classList.add('light-mode');
+    } else {
+      document.body.classList.remove('light-mode');
+    }
+  }, [themeMode]);
+
+  const toggleTheme = () => {
+    setThemeMode(prev => {
+      const next = prev === 'dark' ? 'light' : 'dark';
+      hablar(next === 'light' ? 'Modo claro activado' : 'Modo oscuro activado');
+      return next;
+    });
+  };
 
   useEffect(() => {
     let cursorX = window.innerWidth / 2;
@@ -440,7 +655,6 @@ function App() {
       }
     };
 
-    // Configurar MediaPipe FaceMesh
     const faceMesh = new window.FaceMesh({
       locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
     });
@@ -528,7 +742,19 @@ function App() {
         </div>
       </header>
 
-      {vista === 'inicio' && <HomeMenu onSelectView={setVista} />}
+      {vista === 'inicio' && (
+        <HomeMenu
+          onSelectView={setVista}
+          isSuperAdmin={isSuperAdmin}
+          onLoginSuccess={() => setIsSuperAdmin(true)}
+          onLogout={() => {
+            setIsSuperAdmin(false);
+            setThemeMode('dark');
+          }}
+          themeMode={themeMode}
+          onToggleTheme={toggleTheme}
+        />
+      )}
       {vista === 'cuento' && <StoryBoard />}
       {vista === 'ajedrez' && <ChessGame />}
 
